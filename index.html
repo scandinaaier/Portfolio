@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Portfolio" />
+  <title>Portfolio</title>
+  <link rel="manifest" href="manifest.json" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #000;
+      overflow: hidden;
+      font-family: Georgia, serif;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #root { width: 100%; height: 100%; }
+
+    input, textarea {
+      -webkit-user-select: text;
+      user-select: text;
+      -webkit-appearance: none;
+      appearance: none;
+      font-family: monospace;
+    }
+
+    /* Smooth scrolling in edit sheet */
+    .edit-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
+    @keyframes fadeSlideUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+    @keyframes slideUp {
+      from { transform: translateY(100px); opacity: 0; }
+      to   { transform: translateY(0);     opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+
+<script>
+const { useState, useEffect, useRef } = React;
+const h = React.createElement;
+
+// ─── Palette ──────────────────────────────────────────────────────────────────
+const ROLES = {
+  founder:  { label:"Founder",       base:"#FF2200", glow:"#FF6644", light:"#FFDDDD", dark:"#990000", mid:"#FF1100" },
+  investor: { label:"Investor",      base:"#FFFF00", glow:"#FFFF66", light:"#FFFFAA", dark:"#888800", mid:"#EEEE00" },
+  advisor:  { label:"Board Advisor", base:"#7700FF", glow:"#AA44FF", light:"#DDBBFF", dark:"#330088", mid:"#6600EE" },
+  operator: { label:"Operator",      base:"#FF0077", glow:"#FF44AA", light:"#FFAAD4", dark:"#880033", mid:"#EE0066" },
+  angel:    { label:"Angel",         base:"#00FFCC", glow:"#55FFE0", light:"#AAFFF0", dark:"#008866", mid:"#00EEBB" },
+};
+const ROLE_KEYS = Object.keys(ROLES);
+
+const ROLE_FIELDS = {
+  founder:  [ {key:"cofounders",label:"Co-founders",placeholder:"Jane Smith, Tom Lee"}, {key:"founded",label:"Year Founded",placeholder:"2019"}, {key:"status",label:"Status",placeholder:"Active / Acquired / Exited"} ],
+  investor: [ {key:"round",label:"Round",placeholder:"Seed / Series A"}, {key:"amount",label:"Amount Invested",placeholder:"€250k"}, {key:"year",label:"Year",placeholder:"2022"} ],
+  advisor:  [ {key:"position",label:"Board Position",placeholder:"Non-exec Director"}, {key:"since",label:"Since",placeholder:"2021"} ],
+  operator: [ {key:"roletitle",label:"Role / Title",placeholder:"COO"}, {key:"tenure",label:"Tenure",placeholder:"2020–2023"} ],
+  angel:    [ {key:"cheque",label:"Cheque Size",placeholder:"€50k"}, {key:"year",label:"Year",placeholder:"2023"} ],
+};
+
+const DECO_ROLES = ["founder","investor","advisor","operator","angel","investor","founder","advisor","angel","operator","operator","founder","angel","advisor","investor"];
+
+const STORAGE_KEY = "disco-portfolio-v1";
+
+// ─── Grid layout ──────────────────────────────────────────────────────────────
+function gridLayout(n) {
+  if (n <= 6)  return { cols:2, rows:3, total:6  };
+  if (n <= 12) return { cols:3, rows:4, total:12 };
+  return              { cols:3, rows:5, total:15 };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function faviconUrl(url) {
+  if (!url) return null;
+  const host = url.replace(/^https?:\/\//,"").replace(/\/.*$/,"");
+  return `https://www.google.com/s2/favicons?domain=${host}&sz=64`;
+}
+function initials(name) {
+  if (!name) return "?";
+  return name.trim().split(/\s+/).map(w=>w[0]).join("").toUpperCase().slice(0,2);
+}
+function qrSrc(url) {
+  const full = url ? (url.startsWith("http") ? url : `https://${url}`) : "https://example.com";
+  return `https://api.qrserver.com/v1/create-qr-code/?size=280x280&color=ffffff&bgcolor=000000&data=${encodeURIComponent(full)}`;
+}
+
+// ─── Storage (localStorage for PWA) ──────────────────────────────────────────
+function load() {
+  try { const v = localStorage.getItem(STORAGE_KEY); return v ? JSON.parse(v) : null; }
+  catch { return null; }
+}
+function save(data) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+}
+
+// ─── Seed data ────────────────────────────────────────────────────────────────
+const SEED = [
+  { id:1,  name:"Angular VC",  role:"investor", url:"angularvc.com",   description:"Led the $40M Series B. On the LP advisory committee.", round:"Series B", amount:"$2M",   year:"2021" },
+  { id:2,  name:"NeuralPath",  role:"founder",  url:"neuralpath.io",   description:"Co-founded 2019. AI diagnostics. Acquired by MedTech Corp 2023.", cofounders:"Jane Smith", founded:"2019", status:"Acquired" },
+  { id:3,  name:"Stackflow",   role:"advisor",  url:"stackflow.dev",   description:"Board advisor since inception. 8,000+ engineering teams.", position:"Non-exec Director", since:"2022" },
+  { id:4,  name:"Orbit Labs",  role:"investor", url:"orbitlabs.space", description:"Seed check 2023. Space logistics & satellite infrastructure.", round:"Pre-Seed", amount:"€150k", year:"2023" },
+  { id:5,  name:"Verdant",     role:"angel",    url:"verdant.earth",   description:"Climate fintech enabling carbon credit trading for SMEs.", cheque:"€50k", year:"2022" },
+  { id:6,  name:"Krato",       role:"operator", url:"krato.io",        description:"COO 2020–2023. Scaled revenue 10x in 18 months.", roletitle:"COO", tenure:"2020–2023" },
+  { id:7,  name:"Lumen AI",    role:"investor", url:"lumenai.com",     description:"$12M Series A. Enterprise AI workflow automation.", round:"Series A", amount:"$500k", year:"2023" },
+  { id:8,  name:"Frostline",   role:"advisor",  url:"frostline.co",    description:"Technical advisor. Cold chain logistics via sensor networks.", position:"Technical Advisor", since:"2023" },
+  { id:9,  name:"Helion",      role:"angel",    url:"helion.energy",   description:"Solid-state batteries for grid-scale energy storage.", cheque:"€75k", year:"2024" },
+];
+
+// ─── LogoMark ─────────────────────────────────────────────────────────────────
+function LogoMark({ company, size }) {
+  const [failed, setFailed] = useState(false);
+  const src = faviconUrl(company.url);
+  if (src && !failed) {
+    return h("img", {
+      src, onError: () => setFailed(true),
+      style: { width:size, height:size, objectFit:"contain", borderRadius:4, display:"block" },
+    });
+  }
+  return h("span", { style: {
+    fontSize: size * 0.6, fontWeight:800, color:"rgba(255,255,255,0.95)",
+    fontFamily:"monospace", lineHeight:1, letterSpacing:"-1px",
+  }}, initials(company.name));
+}
+
+// ─── QR Overlay ───────────────────────────────────────────────────────────────
+function QROverlay({ company, onClose }) {
+  const role = ROLES[company.role];
+  const [on, setOn] = useState(false);
+  useEffect(() => { requestAnimationFrame(() => setOn(true)); }, []);
+  const close = () => { setOn(false); setTimeout(onClose, 280); };
+
+  return h("div", {
+    onClick: close,
+    style: {
+      position:"fixed", inset:0, zIndex:300, background:"#000",
+      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+      opacity: on?1:0, transition:"opacity 0.28s ease",
+    }
+  },
+    h("div", { style: {
+      display:"flex", flexDirection:"column", alignItems:"center", gap:28,
+      transform: on?"scale(1)":"scale(0.88)",
+      transition:"transform 0.32s cubic-bezier(0.34,1.4,0.64,1)",
+    }},
+      h("div", { style: {
+        padding:3, borderRadius:20,
+        background:`linear-gradient(135deg,${role.base},${role.glow})`,
+      }},
+        h("div", { style:{ borderRadius:17, overflow:"hidden", background:"#000" }},
+          h("img", { src:qrSrc(company.url), width:280, height:280, style:{ display:"block" } })
+        )
+      ),
+      h("div", { style:{ textAlign:"center" }},
+        h("div", { style:{ fontSize:22, fontWeight:700, color:"#f0f0f0", fontFamily:"Georgia,serif" }}, company.name),
+        h("div", { style:{ fontSize:10, color:role.glow, fontFamily:"monospace", marginTop:6, letterSpacing:"2px", textTransform:"uppercase" }}, role.label)
+      ),
+      h("div", { style:{ fontSize:10, color:"#333", fontFamily:"monospace", letterSpacing:"2px", textTransform:"uppercase" }}, "tap to close")
+    )
+  );
+}
+
+// ─── Detail Card ──────────────────────────────────────────────────────────────
+function DetailCard({ company, onClose }) {
+  const role = ROLES[company.role];
+  const [on, setOn] = useState(false);
+  useEffect(() => { requestAnimationFrame(() => setOn(true)); }, []);
+  const close = () => { setOn(false); setTimeout(onClose, 300); };
+  const extras = (ROLE_FIELDS[company.role]||[]).map(f=>({label:f.label,value:company[f.key]})).filter(m=>m.value);
+
+  return h("div", {
+    onClick: close,
+    style: {
+      position:"fixed", inset:0, zIndex:200,
+      background:"#080808",
+      opacity: on?1:0,
+      transform: on?"translateY(0)":"translateY(28px)",
+      transition:"opacity 0.3s ease, transform 0.3s cubic-bezier(0.25,1,0.5,1)",
+      display:"flex", flexDirection:"column",
+      overflowY:"auto", WebkitOverflowScrolling:"touch",
+    }
+  },
+    // Colour bar
+    h("div", { style:{ height:5, flexShrink:0, background:`linear-gradient(90deg,${role.dark},${role.base} 30%,${role.glow} 50%,${role.base} 70%,${role.dark})` } }),
+
+    // Hero
+    h("div", { style:{
+      flexShrink:0, padding:"48px 36px 36px",
+      background:`radial-gradient(ellipse at 40% 60%,${role.base}44 0%,transparent 70%)`,
+      borderBottom:`1px solid ${role.base}22`,
+      display:"flex", alignItems:"center", gap:24,
+    }},
+      h("div", { style:{
+        width:96, height:96, borderRadius:22, flexShrink:0,
+        background:`radial-gradient(circle at 38% 32%,${role.mid},${role.dark})`,
+        border:`1px solid ${role.base}55`,
+        display:"flex", alignItems:"center", justifyContent:"center",
+        boxShadow:`0 8px 32px ${role.base}44`,
+      }}, h(LogoMark, { company, size:48 })),
+      h("div", { style:{ flex:1, minWidth:0 }},
+        h("div", { style:{
+          display:"inline-block", marginBottom:10, padding:"4px 12px",
+          borderRadius:20, background:`${role.base}22`, border:`1px solid ${role.base}55`,
+          fontSize:10, fontWeight:800, color:role.glow,
+          textTransform:"uppercase", letterSpacing:"2.5px", fontFamily:"monospace",
+        }}, role.label),
+        h("div", { style:{ fontSize:32, fontWeight:700, color:"#f2f2f2", letterSpacing:"-1px", lineHeight:1.05, fontFamily:"Georgia,serif" }}, company.name),
+        company.url && h("div", { style:{ marginTop:8, fontSize:12, color:"#444", fontFamily:"monospace" }}, company.url)
+      )
+    ),
+
+    // Meta grid
+    extras.length > 0 && h("div", { style:{ flexShrink:0, padding:"28px 36px 0", display:"grid", gridTemplateColumns:"1fr 1fr", gap:"20px 16px" }},
+      ...extras.map((m,i) => h("div", { key:i },
+        h("div", { style:{ fontSize:10, fontWeight:700, color:"#3a3a3a", textTransform:"uppercase", letterSpacing:"1.5px", fontFamily:"monospace", marginBottom:5 }}, m.label),
+        h("div", { style:{ fontSize:18, fontWeight:600, color:"#ccc", fontFamily:"Georgia,serif", letterSpacing:"-0.3px" }}, m.value)
+      ))
+    ),
+
+    // Divider
+    h("div", { style:{ margin:"28px 36px 0", height:1, background:"#1a1a1a", flexShrink:0 } }),
+
+    // Story
+    company.description && h("div", { style:{ padding:"28px 36px 0", flex:1 }},
+      h("div", { style:{ fontSize:11, fontWeight:700, color:"#333", textTransform:"uppercase", letterSpacing:"1.5px", fontFamily:"monospace", marginBottom:14 }}, "The Story"),
+      h("p", { style:{ fontSize:18, lineHeight:1.7, color:"#888", margin:0, fontFamily:"Georgia,serif" }}, company.description)
+    ),
+
+    // Close hint
+    h("div", { style:{ padding:"32px 36px 48px", textAlign:"center", fontSize:10, color:"#252525", fontFamily:"monospace", letterSpacing:"2.5px", textTransform:"uppercase" }}, "tap anywhere to close")
+  );
+}
+
+// ─── Edit Sheet ───────────────────────────────────────────────────────────────
+function EditSheet({ company, onSave, onDelete, onClose }) {
+  const isNew = !company.name;
+  const [form, setForm] = useState({ role:"founder", name:"", url:"", description:"", ...company });
+  const [on, setOn] = useState(false);
+  useEffect(() => { requestAnimationFrame(() => setOn(true)); }, []);
+  const close = cb => { setOn(false); setTimeout(cb, 300); };
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  const role = ROLES[form.role];
+  const extras = ROLE_FIELDS[form.role]||[];
+
+  const inp = { width:"100%", background:"#111", border:"1px solid #2a2a2a", borderRadius:8, padding:"10px 12px", fontSize:14, color:"#ddd", fontFamily:"monospace", outline:"none", marginTop:6, display:"block" };
+  const lbl = { fontSize:10, fontWeight:700, color:"#555", textTransform:"uppercase", letterSpacing:"1.5px", fontFamily:"monospace" };
+
+  return h("div", {
+    onClick: () => close(onClose),
+    style: {
+      position:"fixed", inset:0, zIndex:250,
+      display:"flex", alignItems:"flex-end", justifyContent:"center",
+      background:"rgba(0,0,0,0.92)",
+      opacity: on?1:0, transition:"opacity 0.28s ease",
+      backdropFilter:"blur(20px)", WebkitBackdropFilter:"blur(20px)",
+      paddingBottom: "env(safe-area-inset-bottom, 12px)",
+    }
+  },
+    h("div", {
+      onClick: e => e.stopPropagation(),
+      style: {
+        width:"100%", maxWidth:480,
+        background:"#0d0d0d", border:`1px solid ${role.base}44`,
+        borderRadius:"24px 24px 18px 18px", overflow:"hidden",
+        maxHeight:"88vh", display:"flex", flexDirection:"column",
+        transform: on?"translateY(0)":"translateY(100px)",
+        transition:"transform 0.36s cubic-bezier(0.25,1,0.5,1)",
+        boxShadow:`0 -20px 60px rgba(0,0,0,0.7)`,
+      }
+    },
+      // Colour bar
+      h("div", { style:{ height:3, background:`linear-gradient(90deg,transparent,${role.base},${role.glow},${role.base},transparent)`, flexShrink:0 } }),
+
+      // Header + role picker
+      h("div", { style:{ padding:"16px 20px 14px", borderBottom:"1px solid #1a1a1a", flexShrink:0 }},
+        h("div", { style:{ fontSize:11, fontWeight:700, color:"#444", textTransform:"uppercase", letterSpacing:"2px", fontFamily:"monospace", marginBottom:12 }}, isNew ? "Add Company" : "Edit Company"),
+        h("div", { style:{ display:"flex", gap:7, flexWrap:"wrap" }},
+          ...ROLE_KEYS.map(rk => {
+            const r = ROLES[rk], active = form.role===rk;
+            return h("button", {
+              key:rk, onClick:()=>set("role",rk),
+              style: { padding:"5px 12px", borderRadius:20, cursor:"pointer", border:active?`1px solid ${r.base}`:"1px solid #2a2a2a", background:active?`${r.base}22`:"#111", color:active?r.glow:"#555", fontSize:10, fontWeight:700, fontFamily:"monospace", textTransform:"uppercase", letterSpacing:"1px" }
+            }, r.label);
+          })
+        )
+      ),
+
+      // Fields
+      h("div", { className:"edit-scroll", style:{ overflowY:"auto", padding:"16px 20px", display:"flex", flexDirection:"column", gap:14 }},
+        h("div", null,
+          h("div", { style:lbl }, "Company Name"),
+          h("input", { style:inp, value:form.name, onChange:e=>set("name",e.target.value), placeholder:"e.g. Angular VC" })
+        ),
+        h("div", null,
+          h("div", { style:lbl }, "URL"),
+          h("input", { style:inp, value:form.url||"", onChange:e=>set("url",e.target.value), placeholder:"e.g. angularvc.com" })
+        ),
+        ...extras.map(f =>
+          h("div", { key:f.key },
+            h("div", { style:lbl }, f.label),
+            h("input", { style:inp, value:form[f.key]||"", onChange:e=>set(f.key,e.target.value), placeholder:f.placeholder })
+          )
+        ),
+        h("div", null,
+          h("div", { style:lbl }, "Your Story"),
+          h("textarea", { style:{...inp, resize:"none", height:80, lineHeight:"1.6"}, value:form.description||"", onChange:e=>set("description",e.target.value), placeholder:"What's your involvement and the key story here?" })
+        ),
+        h("div", { style:{ display:"flex", gap:10, paddingTop:4, paddingBottom:8 }},
+          h("button", { onClick:()=>close(()=>onSave(form)), style:{ flex:1, padding:13, borderRadius:12, cursor:"pointer", background:role.base, border:"none", color:"white", fontSize:13, fontWeight:700, fontFamily:"monospace", letterSpacing:"1px" }}, "SAVE"),
+          !isNew && h("button", { onClick:()=>close(()=>onDelete(company.id)), style:{ padding:"13px 18px", borderRadius:12, cursor:"pointer", background:"#1a1a1a", border:"1px solid #2a2a2a", color:"#555", fontSize:13, fontWeight:700, fontFamily:"monospace" }}, "DELETE"),
+          h("button", { onClick:()=>close(onClose), style:{ padding:"13px 18px", borderRadius:12, cursor:"pointer", background:"#1a1a1a", border:"1px solid #2a2a2a", color:"#555", fontSize:13, fontWeight:700, fontFamily:"monospace" }}, "CANCEL")
+        )
+      )
+    )
+  );
+}
+
+// ─── Tile ─────────────────────────────────────────────────────────────────────
+function Tile({ company, index, onSingleTap, onDoubleTap, onLongPress }) {
+  const role = ROLES[company.role];
+  const [lit, setLit] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const tapTimer = useRef(null);
+  const pressTimer = useRef(null);
+  const tapCount = useRef(0);
+
+  useEffect(() => {
+    const t = setTimeout(() => setLit(true), index * 55 + 30);
+    return () => clearTimeout(t);
+  }, [index]);
+
+  const onDown = () => {
+    setPressed(true);
+    pressTimer.current = setTimeout(() => {
+      setPressed(false);
+      clearTimeout(tapTimer.current);
+      tapCount.current = 0;
+      onLongPress();
+    }, 600);
+  };
+  const onUp = () => {
+    setPressed(false);
+    clearTimeout(pressTimer.current);
+    tapCount.current += 1;
+    if (tapCount.current === 1) {
+      tapTimer.current = setTimeout(() => { tapCount.current = 0; onSingleTap(); }, 260);
+    } else if (tapCount.current >= 2) {
+      clearTimeout(tapTimer.current);
+      tapCount.current = 0;
+      onDoubleTap();
+    }
+  };
+  const onLeave = () => { setPressed(false); clearTimeout(pressTimer.current); };
+
+  return h("div", {
+    onPointerDown: onDown, onPointerUp: onUp, onPointerLeave: onLeave,
+    style: {
+      position:"relative", overflow:"hidden", cursor:"pointer", borderRadius:4,
+      opacity: lit ? 1 : 0,
+      transform: lit ? (pressed?"scale(0.93)":"scale(1)") : "scale(0.9)",
+      transition: lit ? "transform 0.1s ease" : `opacity 0.45s ease ${index*55}ms, transform 0.45s cubic-bezier(0.25,1,0.5,1) ${index*55}ms`,
+      background: role.base,
+      filter: pressed ? "brightness(0.8)" : "brightness(1.05) saturate(1.2)",
+      boxShadow: pressed ? "inset 0 0 60px rgba(0,0,0,0.3)" : `inset 0 2px 0 ${role.light}66, inset 0 -2px 0 rgba(0,0,0,0.15)`,
+      userSelect:"none", WebkitUserSelect:"none", touchAction:"manipulation",
+    }
+  },
+    // Sheen
+    h("div", { style:{ position:"absolute", top:0, left:0, right:0, height:"30%", background:"linear-gradient(180deg,rgba(255,255,255,0.12) 0%,transparent 100%)", pointerEvents:"none" } }),
+    // Logo
+    h("div", { style:{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }},
+      h(LogoMark, { company, size: 36 })
+    ),
+    // Long-press ring
+    pressed && h("div", { style:{ position:"absolute", inset:6, borderRadius:2, border:`1px solid ${role.light}55`, pointerEvents:"none" } })
+  );
+}
+
+// ─── Add Tile ─────────────────────────────────────────────────────────────────
+function AddTile({ index, decoRole, onAdd }) {
+  const role = ROLES[decoRole];
+  const [lit, setLit] = useState(false);
+  useEffect(() => { const t = setTimeout(()=>setLit(true), index*55+30); return ()=>clearTimeout(t); }, [index]);
+  return h("div", {
+    onClick: onAdd,
+    style: {
+      position:"relative", overflow:"hidden", cursor:"pointer", borderRadius:4,
+      opacity: lit?0.55:0,
+      transform: lit?"scale(1)":"scale(0.9)",
+      transition:`opacity 0.45s ease ${index*55}ms, transform 0.45s cubic-bezier(0.25,1,0.5,1) ${index*55}ms`,
+      background: role.base,
+      userSelect:"none", WebkitUserSelect:"none", touchAction:"manipulation",
+    }
+  },
+    h("div", { style:{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }},
+      h("span", { style:{ fontSize:26, color:"rgba(255,255,255,0.3)", fontWeight:200, lineHeight:1 }}, "+")
+    )
+  );
+}
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+function App() {
+  const [companies, setCompanies] = useState(null);
+  const [view, setView] = useState(null);
+
+  useEffect(() => {
+    const saved = load();
+    setCompanies(saved && saved.length ? saved : SEED);
+  }, []);
+
+  const persist = updated => { setCompanies(updated); save(updated); };
+
+  const handleSave = form => {
+    const updated = view?.company?.id
+      ? companies.map(c => c.id===view.company.id ? {...c,...form} : c)
+      : [...companies, {...form, id:Date.now()}];
+    persist(updated);
+    setView(null);
+  };
+
+  const handleDelete = id => { persist(companies.filter(c=>c.id!==id)); setView(null); };
+
+  if (!companies) return h("div", { style:{ width:"100%", height:"100%", background:"#000", display:"flex", alignItems:"center", justifyContent:"center" }},
+    h("div", { style:{ width:8, height:8, borderRadius:"50%", background:"#222" }})
+  );
+
+  const { cols, rows, total } = gridLayout(companies.length);
+  const slots = Array.from({ length: total });
+
+  return h("div", { style:{ width:"100%", height:"100%", background:"#000", display:"flex", alignItems:"center", justifyContent:"center" }},
+    h("div", {
+      style: {
+        width:"100%", height:"100%",
+        display:"grid",
+        gridTemplateColumns:`repeat(${cols},1fr)`,
+        gridTemplateRows:`repeat(${rows},1fr)`,
+        gap:4, padding:4,
+        background:"#000",
+      }
+    },
+      ...slots.map((_,i) => {
+        const c = companies[i];
+        return c
+          ? h(Tile, { key:c.id, company:c, index:i,
+              onSingleTap: ()=>setView({type:"detail",company:c}),
+              onDoubleTap: ()=>setView({type:"qr",company:c}),
+              onLongPress: ()=>setView({type:"edit",company:c}),
+            })
+          : h(AddTile, { key:`add-${i}`, index:i, decoRole:DECO_ROLES[i%DECO_ROLES.length], onAdd:()=>setView({type:"edit",company:{}}) });
+      })
+    ),
+    view?.type==="detail" && h(DetailCard, { company:view.company, onClose:()=>setView(null) }),
+    view?.type==="qr"     && h(QROverlay,  { company:view.company, onClose:()=>setView(null) }),
+    view?.type==="edit"   && h(EditSheet,  { company:view.company, onSave:handleSave, onDelete:handleDelete, onClose:()=>setView(null) })
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+</script>
+
+<script>
+// ─── Service Worker registration ──────────────────────────────────────────────
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
